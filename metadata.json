@@ -1,0 +1,6 @@
+{
+  "name": "CivicLens",
+  "description": "Hyperlocal community problem solving platform for reporting potholes, water leakages, damaged streetlights, and other broken public infrastructure.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

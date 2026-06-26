@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A citizen or admin user of CivicLens",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "points": { "type": "integer" },
+        "badges": { "type": "array" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "A community issue report containing details, status, location, and confirmations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "severityScore": { "type": "integer" },
+        "description": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "status": { "type": "string" },
+        "confirmCount": { "type": "integer" },
+        "confirmedBy": { "type": "array" },
+        "reporterUid": { "type": "string" },
+        "descriptionEmbedding": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "category", "severityScore", "description", "lat", "lng", "status", "confirmCount", "reporterUid", "createdAt"]
+    },
+    "Escalation": {
+      "title": "Escalation",
+      "description": "An escalation ticket generated for unresolved or highly verified reports",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "reportId": { "type": "string" },
+        "draftedComplaintText": { "type": "string" },
+        "targetDepartment": { "type": "string" },
+        "sentAt": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "reportId", "draftedComplaintText", "targetDepartment", "sentAt", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles and gamification points"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Hyperlocal issue reports"
+    },
+    "/escalations/{escalationId}": {
+      "schema": "Escalation",
+      "description": "Escalated complaints sent to departments"
+    }
+  }
+}
