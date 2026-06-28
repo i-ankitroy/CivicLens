@@ -3,12 +3,63 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// Shared Types & Interfaces
 import React, { useState } from "react";
 import { IssueCategory, TriageResponse, ReportSubmitResponse, IssueReport } from "../types";
 import { Camera, MapPin, Upload, Sparkles, Edit2, CheckCircle, AlertTriangle, User } from "lucide-react";
 import CivicMap from "./CivicMap";
 import { collection, addDoc, doc, updateDoc, setDoc } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
+
+// Canvas-based client-side image compression down to 800px max bounds and JPEG format
+const compressImage = (file: File, maxW = 800, maxH = 800, quality = 0.75): Promise<{ base64: string; mimeType: string }> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate responsive dimensions keeping aspect ratio
+        if (width > height) {
+          if (width > maxW) {
+            height = Math.round((height * maxW) / width);
+            width = maxW;
+          }
+        } else {
+          if (height > maxH) {
+            width = Math.round((width * maxH) / height);
+            height = maxH;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not acquire 2D canvas context"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Export as compressed image/jpeg
+        const compressedBase64 = canvas.toDataURL("image/jpeg", quality);
+        resolve({
+          base64: compressedBase64,
+          mimeType: "image/jpeg"
+        });
+      };
+      img.onerror = (err) => reject(err);
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+};
 
 interface TriageFormProps {
   reporterUid: string;
@@ -53,17 +104,33 @@ export default function TriageForm({
   // Map selection flag
   const [showLocationPicker, setShowLocationPicker] = useState(false);
 
-  // Convert File to Base64
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Convert File to Base64 with client-side canvas compression to fit Firestore 1MB limits
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setPhotoMimeType(file.type);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhoto(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setLoading(true);
+    setLoadingStep("Compressing photo for optimized database upload...");
+    setError("");
+
+    try {
+      // Compresses to max 800px width/height and 75% quality JPEG
+      const result = await compressImage(file, 800, 800, 0.75);
+      setPhoto(result.base64);
+      setPhotoMimeType(result.mimeType);
+    } catch (err: any) {
+      console.error("Image compression failed, falling back to original:", err);
+      // Fallback to original Base64 if canvas is unavailable or fails
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhoto(reader.result as string);
+        setPhotoMimeType(file.type);
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setLoading(false);
+      setLoadingStep("");
+    }
 
     // Try to auto-grab geolocation when they attach a photo
     grabGeolocation();
@@ -158,9 +225,16 @@ export default function TriageForm({
     setError("");
 
     try {
+      // Get Firebase Auth ID token
+      const idToken = await auth.currentUser?.getIdToken();
+      const headers: any = { "Content-Type": "application/json" };
+      if (idToken) {
+        headers["Authorization"] = `Bearer ${idToken}`;
+      }
+
       const response = await fetch("/api/reports/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           category: finalCategory,
           severityScore: finalSeverity,
@@ -206,9 +280,13 @@ export default function TriageForm({
               (nextConfirmCount >= 10);
 
             if (isEligible && parentReport.status !== "Escalated" && parentReport.status !== "In Progress" && parentReport.status !== "Resolved") {
+              const escHeaders: any = { "Content-Type": "application/json" };
+              if (idToken) {
+                escHeaders["Authorization"] = `Bearer ${idToken}`;
+              }
               const escRes = await fetch("/api/reports/escalate", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: escHeaders,
                 body: JSON.stringify({
                   reportId: parentReport.id,
                   category: parentReport.category,
@@ -344,12 +422,12 @@ export default function TriageForm({
               {photo ? (
                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden group border-2 border-[#1B4332]/15">
                   <img src={photo} alt="Issue upload preview" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                  <div className="absolute inset-0 bg-black/30 md:bg-black/40 flex items-center justify-center transition opacity-100 md:opacity-0 md:group-hover:opacity-100">
                     <button
                       id="change-photo-btn"
                       type="button"
                       onClick={() => setPhoto(null)}
-                      className="bg-white text-[#1B4332] px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:scale-105 transition"
+                      className="bg-white text-[#1B4332] px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition"
                     >
                       Change Photo
                     </button>
@@ -445,7 +523,7 @@ export default function TriageForm({
                   id="trigger-locate-btn"
                   type="button"
                   onClick={grabGeolocation}
-                  className="bg-slate-50 border border-[#1B4332]/10 p-3 rounded-2xl hover:bg-[#FDFBF7] text-[#1B4332] active:scale-95 transition"
+                  className="bg-slate-50 border border-[#1B4332]/10 p-3.5 rounded-2xl hover:bg-[#FDFBF7] text-[#1B4332] active:scale-95 transition flex items-center justify-center min-h-[44px] min-w-[44px]"
                   title="Capture current location"
                 >
                   <MapPin className="h-4 w-4 text-[#E76F51]" />
@@ -585,7 +663,7 @@ export default function TriageForm({
               id="triage-edit-location-btn"
               type="button"
               onClick={() => setShowLocationPicker(!showLocationPicker)}
-              className="text-xxs font-bold text-[#E76F51] uppercase tracking-wider border border-[#E76F51]/20 px-2.5 py-1.5 rounded-xl hover:bg-white transition"
+              className="text-xs font-extrabold text-[#E76F51] uppercase tracking-wider border border-[#E76F51]/20 px-4 py-2.5 rounded-xl hover:bg-white transition min-h-[40px]"
             >
               Adjust Pin
             </button>

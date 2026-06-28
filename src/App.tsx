@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { collection, onSnapshot, query, orderBy, doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
@@ -42,6 +42,30 @@ export default function App() {
 
   // Submit states
   const [submitSuccessResult, setSubmitSuccessResult] = useState<ReportSubmitResponse | null>(null);
+
+  // Floating nav measurement states
+  const footerRef = useRef<HTMLElement>(null);
+  const [footerHeight, setFooterHeight] = useState(70);
+
+  useEffect(() => {
+    if (!footerRef.current) return;
+    const footer = footerRef.current;
+    const updateHeight = () => {
+      if (footer) {
+        setFooterHeight(footer.offsetHeight);
+      }
+    };
+    
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+    observer.observe(footer);
+    updateHeight();
+    
+    return () => {
+      observer.disconnect();
+    };
+  }, [firebaseUser, currentTab, submitSuccessResult]);
 
   // 1. Listen to Firebase Authentication State
   useEffect(() => {
@@ -119,7 +143,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-brand-bg flex flex-col items-center justify-center p-4">
         <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-green border-t-transparent mb-4"></div>
         <p className="text-xs font-bold text-brand-green uppercase tracking-widest font-display">Loading CivicLens Platform...</p>
       </div>
@@ -131,7 +155,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-brand-bg flex flex-col font-sans text-brand-charcoal">
+    <div className="min-h-[100dvh] bg-brand-bg flex flex-col font-sans text-brand-charcoal">
       {/* ====================================================================
           TOP NAVIGATION HEADER (Floating & Glassmorphic)
           ==================================================================== */}
@@ -216,7 +240,10 @@ export default function App() {
       {/* ====================================================================
           CORE WORKSPACE CONTAINER
           ==================================================================== */}
-      <main className="flex-grow p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24">
+      <main 
+        style={{ paddingBottom: `calc(${footerHeight}px + 2.5rem + env(safe-area-inset-bottom))` }}
+        className="flex-grow p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto"
+      >
         {/* Render Tab Contents */}
         {currentTab === "map" && (
           <div className="h-[60vh] sm:h-[600px] w-full relative rounded-3xl overflow-hidden border border-brand-border shadow-sm">
@@ -331,7 +358,11 @@ export default function App() {
       {/* ====================================================================
           BENTO INTERACTION RAIL FOOTER (Floating & Glassmorphic)
           ==================================================================== */}
-      <footer className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[calc(100%-3rem)] max-w-4xl bg-white/80 backdrop-blur-md border border-brand-border/60 py-2 px-3 sm:px-6 rounded-2xl sm:rounded-3xl shadow-xl z-[2000] flex items-center justify-between transition-all duration-300">
+      <footer 
+        ref={footerRef}
+        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+        className="fixed left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[calc(100%-3rem)] max-w-4xl bg-white/80 backdrop-blur-md border border-brand-border/60 py-2 px-3 sm:px-6 rounded-2xl sm:rounded-3xl shadow-xl z-[2000] flex items-center justify-between transition-all duration-300"
+      >
         <div className="hidden md:flex gap-4 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
           <span className="text-brand-green flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-brand-green animate-pulse inline-block"></span>

@@ -9,18 +9,17 @@ import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import admin from "firebase-admin";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import firebaseConfig from "./firebase-applet-config.json";
 
 // Load environment variables
 dotenv.config();
 
-console.log("[DEBUG] Starting CivicLens Backend server with native Firebase Admin SDK...");
+console.log("[DEBUG] Starting CivicLens Backend server with stateless ID token verification...");
 
 const appInstance = admin.initializeApp({
-  projectId: "vital-ace-6jkjx"
+  projectId: firebaseConfig.projectId
 });
-
-const db = getFirestore(appInstance, "ai-studio-77ea6c46-164f-4c08-8fd8-b4b6351fe6c3");
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({
@@ -111,6 +110,25 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+/**
+ * Firebase ID Token Verification Middleware
+ */
+async function verifyFirebaseToken(req: any, res: any, next: any) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Unauthorized: Missing or malformed Authorization header with Bearer token." });
+    }
+    const idToken = authHeader.split("Bearer ")[1];
+    const decodedToken = await getAuth(appInstance).verifyIdToken(idToken);
+    req.user = decodedToken;
+    next();
+  } catch (err: any) {
+    console.error("[Auth] Token verification failed:", err);
+    return res.status(401).json({ error: `Unauthorized: Invalid token: ${err.message}` });
+  }
+}
+
 // ============================================================================
 // API ROUTES
 // ============================================================================
@@ -194,9 +212,9 @@ app.post("/api/triage", async (req, res) => {
 });
 
 /**
- * 2. Submit Report (With Server-Side Duplicate Check & Gamification using Firebase Admin)
+ * 2. Submit Report (With Server-Side Duplicate Check & Gamification)
  */
-app.post("/api/reports/submit", async (req, res) => {
+app.post("/api/reports/submit", verifyFirebaseToken, async (req: any, res: any) => {
   try {
     const { 
       category, 
@@ -213,8 +231,14 @@ app.post("/api/reports/submit", async (req, res) => {
       userBadges = []
     } = req.body;
 
+    const tokenUid = req.user.uid;
+
     if (lat === undefined || lng === undefined || !reporterUid) {
       return res.status(400).json({ error: "Missing required report fields (lat, lng, reporterUid)." });
+    }
+
+    if (reporterUid !== tokenUid) {
+      return res.status(403).json({ error: "Forbidden: Verified token UID does not match reporterUid." });
     }
 
     let finalCategory = category;
@@ -491,71 +515,6 @@ app.post("/api/reports/submit", async (req, res) => {
 });
 
 /**
- * 2b. Unmerge/Override Duplicate Report (Admin Only)
- */
-app.post("/api/reports/unmerge", async (req, res) => {
-  try {
-    const { reportId } = req.body;
-    if (!reportId) {
-      return res.status(400).json({ error: "Missing reportId to unmerge." });
-    }
-
-    const dupReportRef = db.collection("reports").doc(reportId);
-    const dupReportDoc = await dupReportRef.get();
-    if (!dupReportDoc.exists) {
-      return res.status(404).json({ error: "Duplicate report not found." });
-    }
-
-    const dupData = dupReportDoc.data() || {};
-    if (!dupData.isDuplicate || !dupData.parentReportId) {
-      return res.status(400).json({ error: "This report is not a merged duplicate." });
-    }
-
-    const parentReportId = dupData.parentReportId;
-    const parentReportRef = db.collection("reports").doc(parentReportId);
-    const parentReportDoc = await parentReportRef.get();
-
-    // 1. Restore duplicate report as a primary report
-    await dupReportRef.update({
-      isDuplicate: false,
-      parentReportId: FieldValue.delete(),
-      similarityScore: FieldValue.delete(),
-      status: "Reported",
-      confirmCount: 1,
-      confirmedBy: [dupData.reporterUid],
-      updatedAt: new Date().toISOString()
-    });
-
-    // 2. Adjust parent report's confirmations if the parent exists
-    if (parentReportDoc.exists) {
-      const parentData = parentReportDoc.data() || {};
-      const updatedConfirmedBy = (parentData.confirmedBy || []).filter((uid: string) => uid !== dupData.reporterUid);
-      const newConfirmCount = Math.max(0, (parentData.confirmCount || 0) - 1);
-
-      let newStatus = parentData.status;
-      if (newStatus === "Verified" && newConfirmCount < 5) {
-        newStatus = "Reported";
-      }
-
-      await parentReportRef.update({
-        confirmCount: newConfirmCount,
-        confirmedBy: updatedConfirmedBy,
-        status: newStatus,
-        updatedAt: new Date().toISOString()
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Report successfully unmerged and restored as a primary civic complaint."
-    });
-  } catch (error: any) {
-    console.error("Error unmerging report:", error);
-    return res.status(500).json({ error: error.message || "Failed to unmerge report." });
-  }
-});
-
-/**
  * Helper: Infer department from issue category
  */
 function getDepartment(category: string): string {
@@ -575,7 +534,7 @@ function getDepartment(category: string): string {
  * 2c. Escalation Agent Route (AI-assisted Multi-step Autonomous Civic Escalation)
  * Completely stateless to avoid server-side Firestore credential / permission issues.
  */
-app.post("/api/reports/escalate", async (req, res) => {
+app.post("/api/reports/escalate", verifyFirebaseToken, async (req: any, res: any) => {
   try {
     const { 
       reportId, 
@@ -665,85 +624,6 @@ Please write a structured, elegant, and persuasive letter demanding attention to
     return res.status(500).json({ error: error.message || "Failed to process escalation." });
   }
 });
-
-/**
- * 3. Stats and Hotspot Route for Dashboard using Admin SDK
- */
-app.get("/api/stats", async (req, res) => {
-  try {
-    const querySnapshot = await db.collection("reports").get();
-    const reports: any[] = [];
-    querySnapshot.forEach((docSnap) => {
-      reports.push(docSnap.data());
-    });
-
-    const totalReports = reports.length;
-    const resolvedCount = reports.filter(r => r.status === "Resolved").length;
-
-    // Calculate average resolution time
-    let resolutionTimeSum = 0;
-    let resolvedWithDatesCount = 0;
-
-    reports.forEach((r) => {
-      if (r.status === "Resolved" && r.createdAt && r.updatedAt) {
-        const start = new Date(r.createdAt).getTime();
-        const end = new Date(r.updatedAt).getTime();
-        if (end > start) {
-          resolutionTimeSum += (end - start);
-          resolvedWithDatesCount++;
-        }
-      }
-    });
-
-    const avgResolutionHours = resolvedWithDatesCount > 0 
-      ? Math.round((resolutionTimeSum / resolvedWithDatesCount) / (1000 * 60 * 60)) 
-      : 0;
-
-    // Calculate simple hotspot locations based on last 30 days reports
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const recentReports = reports.filter(r => r.createdAt && new Date(r.createdAt) >= thirtyDaysAgo);
-
-    // Group reports geographically into grid zones of ~1km
-    const hotspotGroups: { [gridKey: string]: { lat: number, lng: number, count: number, name: string } } = {};
-
-    recentReports.forEach((r) => {
-      // Grid round to ~0.01 precision (~1km)
-      const latGrid = Math.round(r.lat * 100) / 100;
-      const lngGrid = Math.round(r.lng * 100) / 100;
-      const key = `${latGrid},${lngGrid}`;
-
-      if (hotspotGroups[key]) {
-        hotspotGroups[key].count++;
-      } else {
-        hotspotGroups[key] = {
-          lat: latGrid,
-          lng: lngGrid,
-          count: 1,
-          name: `Ward Area (${latGrid.toFixed(2)}, ${lngGrid.toFixed(2)})`
-        };
-      }
-    });
-
-    const hotspots = Object.values(hotspotGroups)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    return res.json({
-      totalReports,
-      resolvedCount,
-      avgResolutionHours,
-      hotspots
-    });
-  } catch (error: any) {
-    console.error("Error in calculating stats:", error);
-    return res.status(500).json({ error: error.message || "Failed to retrieve statistics." });
-  }
-});
-
-
-
 
 // ============================================================================
 // VITE CLIENT INTEGRATION

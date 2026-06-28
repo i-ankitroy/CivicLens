@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { IssueReport, ReportStatus } from "../types";
 import { doc, updateDoc, increment, arrayUnion, getDoc, setDoc, deleteField, collection, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
 import { 
   Check, 
   MapPin, 
@@ -119,10 +119,17 @@ export default function ReportDetail({
   const triggerEscalationAgent = async (simulateFollowUp = false, confirmCountOverride?: number) => {
     const activeConfirmCount = confirmCountOverride !== undefined ? confirmCountOverride : (report.confirmCount || 1);
     
+    // Get modern Firebase ID token for verification
+    const idToken = await auth.currentUser?.getIdToken();
+    const headers: any = { "Content-Type": "application/json" };
+    if (idToken) {
+      headers["Authorization"] = `Bearer ${idToken}`;
+    }
+
     // Call our stateless backend to draft the complaint letter with Gemini
     const res = await fetch("/api/reports/escalate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         reportId: report.id,
         category: report.category,

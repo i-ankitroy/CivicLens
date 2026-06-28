@@ -260,8 +260,9 @@ export default function Dashboard({ reports, onSelectReport, isAdmin = false }: 
           </div>
 
           {/* Table Container */}
-          <div className="bg-white rounded-3xl border border-brand-border overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="bg-transparent md:bg-white rounded-3xl md:border md:border-brand-border overflow-hidden md:shadow-sm">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-xs">
                 <thead className="bg-brand-beige">
                   <tr>
@@ -319,6 +320,57 @@ export default function Dashboard({ reports, onSelectReport, isAdmin = false }: 
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Stacked-Card View */}
+            <div className="block md:hidden space-y-4">
+              {filteredReports.length === 0 ? (
+                <div className="bg-white rounded-3xl border border-brand-border p-8 text-center text-slate-400 font-semibold italic shadow-sm">
+                  No community records found matching filter criteria.
+                </div>
+              ) : (
+                filteredReports.map((report) => (
+                  <div
+                    key={report.id}
+                    id={`report-card-${report.id}`}
+                    onClick={() => onSelectReport(report)}
+                    className="bg-white p-5 rounded-3xl border border-brand-border shadow-sm space-y-3 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider">#{report.id.slice(-6).toUpperCase()}</span>
+                        <span className="text-xs text-brand-orange font-bold mt-0.5">{report.category}</span>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-brand-green/10 text-brand-green">
+                        {report.status}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed line-clamp-2">
+                      {report.description}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-50 text-[10px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400 font-medium">Severity:</span>
+                        <span className={`px-2 py-0.5 text-[9px] font-extrabold rounded-full ${getSeverityBg(report.severityScore)}`}>
+                          {report.severityScore} / 5
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-slate-500 font-bold">
+                        <span>{report.confirmCount} citizens verified</span>
+                      </div>
+                    </div>
+
+                    {report.isDuplicate && (
+                      <div className="bg-amber-50/70 border border-amber-100/60 p-2 rounded-xl text-[9px] text-amber-800 font-medium flex items-center justify-between gap-1 mt-1">
+                        <span className="font-extrabold uppercase tracking-wide">Duplicate Report</span>
+                        <span>{Math.round(report.similarityScore! * 100)}% Similarity</span>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

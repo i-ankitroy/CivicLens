@@ -94,7 +94,10 @@ export default function CivicMap({
       center: [currentLat, currentLng],
       zoom: 13,
       zoomControl: true,
-    });
+      dragging: true,
+      touchZoom: true,
+      tap: true,
+    } as any);
 
     // Add Tile Layer (OpenStreetMap)
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
