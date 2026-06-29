@@ -591,9 +591,14 @@ export default function ReportDetail({
                 <AlertTriangle className="h-4 w-4 text-[#E76F51]" />
                 <span>Merged Duplicate ({Math.round((report.similarityScore || 0) * 100)}% Similarity)</span>
               </div>
-              <p className="text-[11px] text-amber-700/90 leading-relaxed font-medium">
-                This report was automatically merged into its parent civic issue because it was filed within 150 meters and shares highly similar visual and textual details.
-              </p>
+              <div className="text-[11px] text-amber-700/90 leading-relaxed font-medium space-y-1">
+                <p>This report was automatically merged into its parent civic issue.</p>
+                {report.matchReason && (
+                  <p className="bg-[#E76F51]/10 text-[#1B4332] font-semibold p-2 rounded-lg border border-[#E76F51]/20 mt-1">
+                    Reason: <span className="text-slate-700 font-normal">{report.matchReason}</span>
+                  </p>
+                )}
+              </div>
               {isAdmin && (
                 <button
                   id="admin-override-unmerge-btn"
@@ -623,6 +628,11 @@ export default function ReportDetail({
                         <span className="bg-amber-50 text-amber-800 font-extrabold px-1.5 py-0.5 rounded text-[8px] border border-amber-100">
                           {Math.round((dup.similarityScore || 0) * 100)}% Sim
                         </span>
+                        {dup.matchReason && (
+                          <span className="text-[8px] text-emerald-800 bg-emerald-50 border border-emerald-100 px-1 py-0.5 rounded italic truncate max-w-[150px]" title={dup.matchReason}>
+                            {dup.matchReason}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] text-slate-500 font-medium truncate italic">"{dup.description}"</p>
                       <p className="text-[9px] text-slate-400">By {dup.reporterName || "Anonymous"} • {new Date(dup.createdAt).toLocaleDateString()}</p>

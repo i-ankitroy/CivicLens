@@ -6,12 +6,17 @@ CivicLens is a production-quality, full-stack civic-tech platform designed for m
 
 ---
 
-## 🌟 Hackathon Highlights & Core Differentiators
+## 🌟 Key Highlights & Core Differentiators
 
 Unlike standard "pothole reporting" tools that flood city councils with redundant tickets, CivicLens implements **community-driven consolidation and verification**:
 
 1. **AI-Powered Visual & Textual Triage**: Uploading a photo triggers server-side Gemini vision pipelines to automatically categorize the issue, evaluate its safety/hazard severity, and draft an objective municipal complaint.
-2. **Intelligent Duplicate Merging (Core Value)**: Using location grouping combined with **Gemini Embeddings semantic vector comparison**, CivicLens detects if a new submission is a duplicate of a nearby issue. Instead of creating a new ticket, it merges the report into the original issue and increments its **Citizen Confirmation Count**.
+2. **Multi-Layered Precision Duplicate Merging (Core Value)**: To ensure maximum accuracy and resolve duplicate detection issues, CivicLens implements a precise multi-layered validation process:
+   - **Proximity & Category Match (High Confidence)**: If a report is within an exact match radius (30m) and shares the exact same category, it is automatically marked as a duplicate.
+   - **Direct Identical Photo Match**: Checks for identical image uploads within a 150m radius.
+   - **Semantic Cosine Similarity**: Performs high-fidelity comparison of description text embeddings with a fine-tuned threshold (72%) to handle natural wording variations.
+   - **Fallback Jaccard Overlap Analysis**: Uses normalized description token overlap as a robust text fallback.
+   This guarantees that duplicate issues filed by different users or with slightly different descriptions are consolidated, updating the original ticket's **Citizen Confirmation Count** and rewarding users with points.
 3. **Threshold-Based Verification**: When an issue receives **5 distinct citizen confirmations**, the system automatically transitions its status to **Verified**.
 4. **Autonomous Department Escalation**: If an issue crosses the severity and confirmation thresholds, a server-side Gemini pipeline drafts a highly professional civic complaint letter targeted at the correct local department (e.g., Department of Public Works, Department of Transportation) and appends it to the issue's timeline.
 5. **Gamification & Civic Engagement**: To foster continuous citizen participation, residents earn points (+10 for discovering unique issues, +2 for verifying duplicates) and unlock achievements like the "Civic Scout" or "Community Guardian" badges.

@@ -339,10 +339,14 @@ app.post("/api/reports/submit", verifyFirebaseToken, async (req: any, res: any) 
     let duplicateReportId = "";
     let duplicateReportData: any = null;
     let maxSimilarity = 0;
+    let duplicateMatchReason = "";
 
     // Radius boundary and similarity thresholds (Explicit & commented for Hackathon Demo)
     const MATCH_RADIUS_METERS = 150; 
-    const SIMILARITY_THRESHOLD = 0.85;
+    const EXACT_MATCH_RADIUS_METERS = 30; // Within 30m of the same category, it is highly likely a duplicate
+    const SIMILARITY_THRESHOLD = 0.72; // Lowered from 0.85 to be robust against wording variations in AI triage
+
+    console.log(`[Duplicate Check] Analyzing ${existingReports.length} reports against new report at Lat: ${lat}, Lng: ${lng}`);
 
     for (const existingReport of existingReports) {
       if (existingReport.isDuplicate) continue;
@@ -351,18 +355,82 @@ app.post("/api/reports/submit", verifyFirebaseToken, async (req: any, res: any) 
       const distance = getDistanceInMeters(lat, lng, existingReport.lat, existingReport.lng);
       
       if (distance <= MATCH_RADIUS_METERS) {
-        // Calculate description cosine similarity if embedding is available
-        if (descriptionEmbedding.length > 0 && existingReport.descriptionEmbedding) {
+        console.log(`[Duplicate Check] Report #${existingReport.id.slice(-6).toUpperCase()} is within range (${distance.toFixed(1)}m). Category: ${existingReport.category}`);
+
+        // 1. Proximity & Category Match (High Confidence)
+        // If they are within 30 meters and have the exact same category, they are duplicates.
+        if (distance <= EXACT_MATCH_RADIUS_METERS && finalCategory === existingReport.category) {
+          duplicateFound = true;
+          duplicateReportId = existingReport.id;
+          duplicateReportData = existingReport;
+          maxSimilarity = 1.0;
+          duplicateMatchReason = `Within exact proximity (${distance.toFixed(1)}m) with matching category (${finalCategory})`;
+          console.log(`[Duplicate Check] MATCH FOUND: ${duplicateMatchReason}`);
+          break; // Perfect match, exit loop
+        }
+
+        // 2. Direct Identical Image Match
+        // If they uploaded the same image file within the 150m radius
+        if (photoUrl && existingReport.photoUrl && photoUrl === existingReport.photoUrl) {
+          duplicateFound = true;
+          duplicateReportId = existingReport.id;
+          duplicateReportData = existingReport;
+          maxSimilarity = 1.0;
+          duplicateMatchReason = `Identical photo uploaded within ${distance.toFixed(1)}m`;
+          console.log(`[Duplicate Check] MATCH FOUND: ${duplicateMatchReason}`);
+          break; // Perfect match, exit loop
+        }
+
+        // 3. Text Embedding Cosine Similarity
+        if (descriptionEmbedding.length > 0 && existingReport.descriptionEmbedding && existingReport.descriptionEmbedding.length > 0) {
           const similarity = cosineSimilarity(descriptionEmbedding, existingReport.descriptionEmbedding);
+          console.log(`[Duplicate Check] Embedding similarity with #${existingReport.id.slice(-6).toUpperCase()}: ${(similarity * 100).toFixed(1)}%`);
           
           if (similarity >= SIMILARITY_THRESHOLD && similarity > maxSimilarity) {
             duplicateFound = true;
             duplicateReportId = existingReport.id;
             duplicateReportData = existingReport;
             maxSimilarity = similarity;
+            duplicateMatchReason = `AI text similarity (${(similarity * 100).toFixed(1)}%) within ${distance.toFixed(1)}m`;
+          }
+        }
+
+        // 4. Fallback Description Text Jaccard Overlap
+        // If embeddings are unavailable, or as a safety net for high text word-overlap
+        if (!duplicateFound && finalDescription && existingReport.description) {
+          const cleanWords = (text: string) => {
+            return new Set(
+              text.toLowerCase()
+                .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
+                .split(/\s+/)
+                .filter(w => w.length > 3)
+            );
+          };
+          const wordsNew = cleanWords(finalDescription);
+          const wordsExisting = cleanWords(existingReport.description);
+          
+          if (wordsNew.size > 0 && wordsExisting.size > 0) {
+            const intersection = new Set([...wordsNew].filter(w => wordsExisting.has(w)));
+            const union = new Set([...wordsNew, ...wordsExisting]);
+            const jaccard = intersection.size / union.size;
+            console.log(`[Duplicate Check] Fallback word overlap: ${(jaccard * 100).toFixed(1)}%`);
+
+            if (jaccard >= 0.35 && jaccard > maxSimilarity) {
+              duplicateFound = true;
+              duplicateReportId = existingReport.id;
+              duplicateReportData = existingReport;
+              maxSimilarity = jaccard;
+              duplicateMatchReason = `Description word overlap similarity (${(jaccard * 100).toFixed(1)}%) within ${distance.toFixed(1)}m`;
+            }
           }
         }
       }
+    }
+
+    if (duplicateFound) {
+      console.log(`[Duplicate Check] Final Decision: MERGED into #${duplicateReportId.slice(-6).toUpperCase()} because: ${duplicateMatchReason}`);
+    } else {
+      console.log(`[Duplicate Check] Final Decision: UNIQUE REPORT created.`);
     }
 
     // D. Perform points and badges update for user
@@ -391,6 +459,7 @@ app.post("/api/reports/submit", verifyFirebaseToken, async (req: any, res: any) 
         isDuplicate: true,
         parentReportId: duplicateReportId,
         similarityScore: Number(maxSimilarity.toFixed(4)),
+        matchReason: duplicateMatchReason,
         confirmCount: 0,
         confirmedBy: [],
         reporterUid,

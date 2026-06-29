@@ -44,6 +44,7 @@ export interface IssueReport {
   isDuplicate?: boolean;
   parentReportId?: string;
   similarityScore?: number;
+  matchReason?: string;
   createdAt: string;
   updatedAt: string;
 }

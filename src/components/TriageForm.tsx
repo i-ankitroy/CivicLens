@@ -541,7 +541,7 @@ export default function TriageForm({
               className="w-full flex items-center justify-center py-3.5 px-4 border border-transparent rounded-2xl shadow-md text-sm font-bold text-white bg-[#1B4332] hover:bg-[#143225] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#1B4332] transition duration-150 gap-2"
             >
               <Sparkles className="h-4 w-4 text-[#E76F51] fill-[#E76F51]/20" />
-              Analyze with Gemini AI Triage
+              Analyze Report
             </button>
           </div>
         </div>
